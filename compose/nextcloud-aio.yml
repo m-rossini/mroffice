@@ -1,0 +1,30 @@
+# Nextcloud AIO stack for Podman/Docker
+# Mastercontainer manages all other containers
+# Note: AIO has specific requirements - needs access to docker socket or equivalent
+
+version: '3.8'
+
+services:
+  nextcloud-aio-mastercontainer:
+    image: ${NEXTCLOUD_AIO_MASTERCONTAINER_IMAGE:-nextcloud/all-in-one:latest}
+    container_name: nextcloud-aio-mastercontainer
+    restart: unless-stopped
+    ports:
+      - ${AIO_PORT:-8080}:8080
+      - ${APACHE_PORT:-443}:443
+    environment:
+      - AIO_COMMUNITY_CONTAINERS=${AIO_COMMUNITY_CONTAINERS:-}
+      - APACHE_PORT=${APACHE_PORT:-443}
+      - APACHE_IP_BINDING=${APACHE_IP_BINDING:-0.0.0.0}
+      - NEXTCLOUD_DATADIR=${NEXTCLOUD_DATADIR:-/srv/mroffice/nextcloud/data}
+      - NEXTCLOUD_MOUNT=${NEXTCLOUD_MOUNT:-/mnt/ncdata}
+      - SKIP_DOMAIN_VALIDATION=${SKIP_DOMAIN_VALIDATION:-false}
+    volumes:
+      - nextcloud_aio_mastercontainer:/mnt/docker-aio-config
+      - ${DATA_ROOT:-/srv/mroffice}/nextcloud/data:/mnt/ncdata
+      # For Podman, may need to adjust socket path
+      - ${DOCKER_SOCKET_PATH:-/run/docker.sock}:/var/run/docker.sock:ro
+
+volumes:
+  nextcloud_aio_mastercontainer:
+    # Engine-managed per O7 exception - documented

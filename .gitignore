@@ -1,0 +1,10 @@
+.env
+config/.secrets.env
+*.log
+*.swp
+.DS_Store
+/srv/
+/var/backups/
+data/
+.env.local
+*.bak
