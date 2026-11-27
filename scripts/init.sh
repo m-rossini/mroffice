@@ -37,7 +37,7 @@ if [ ! -f "config/.secrets.env" ]; then
         echo "NEXTCLOUD_ADMIN_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/')"
         echo "PAPERLESS_ADMIN_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/')"
         echo "PAPERLESS_API_TOKEN=$(openssl rand -hex 32)"
-        echo "PAPERLESS_SECRET_KEY=$(openssl rand -hex 32)"
+        echo "PAPERLESS_SECRET_KEY=$(openssl rand -base64 48)"
         echo "POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/')"
         echo "REDIS_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/')"
     } > config/.secrets.env
@@ -47,11 +47,11 @@ else
     echo "✓ config/.secrets.env already exists"
 fi
 
-# Create DATA_ROOT directories
+# Create DATA_ROOT directories (host-bound bind mounts — never named volumes)
 echo ""
 echo "Creating directories under $DATA_ROOT..."
 mkdir -p "$DATA_ROOT"/nextcloud/{data,config} "$DATA_ROOT"/backups 2>&1
-mkdir -p "$DATA_ROOT"/paperless/{media,data,consume,export,pgdata} 2>&1
+mkdir -p "$DATA_ROOT"/paperless/{media,data,consume,export,pgdata,redisdata,ollama} 2>&1
 
 if [ "$(id -u)" -eq 0 ]; then
     chown -R 33:33 "$DATA_ROOT/nextcloud" 2>/dev/null || chown -R www-data:www-data "$DATA_ROOT/nextcloud" 2>/dev/null || true
