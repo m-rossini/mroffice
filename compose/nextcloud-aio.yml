@@ -2,8 +2,6 @@
 # Mastercontainer manages all other containers
 # Note: AIO has specific requirements - needs access to docker socket or equivalent
 
-version: '3.8'
-
 services:
   nextcloud-aio-mastercontainer:
     image: ${NEXTCLOUD_AIO_MASTERCONTAINER_IMAGE:-nextcloud/all-in-one:latest}
