@@ -1,0 +1,129 @@
+# mroffice Paperless-ngx stack — unified local document hub
+# Imported from document_repo (working stack) and adapted to mroffice conventions:
+# - All persistent state under ${DATA_ROOT:-/srv/mroffice}/paperless/ (host-bound bind mounts, :Z for SELinux)
+# - Runtime-agnostic (podman/docker), unique container names (mroffice-*), pinned images via config/versions.env
+# - Services: webserver (Paperless UI :8000) + db (postgres) + broker (redis) + gotenberg (Office→PDF) + tika (text extract)
+# - Optional AI: ollama profile (COMPOSE_PROFILES=ai) for PAPERLESS_AI_* (native suggestions, chat, similar docs)
+#
+# Usage:
+#   STACK=paperless make up        # paperless only
+#   STACK=all make up              # nextcloud + paperless
+#   COMPOSE_PROFILES=ai STACK=paperless make up   # + local LLM
+#
+# Documents in: ${DATA_ROOT}/paperless/consume/  (or `make consume FILE=...`)
+# UI: http://localhost:${PAPERLESS_PORT:-8000}
+
+services:
+  broker:
+    image: ${PAPERLESS_REDIS_IMAGE:-docker.io/library/redis:7}
+    container_name: mroffice-paperless-broker
+    restart: unless-stopped
+    volumes:
+      - ${DATA_ROOT:-/srv/mroffice}/paperless/redisdata:/data:Z
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  db:
+    image: ${PAPERLESS_POSTGRES_IMAGE:-docker.io/library/postgres:16}
+    container_name: mroffice-paperless-db
+    restart: unless-stopped
+    volumes:
+      - ${DATA_ROOT:-/srv/mroffice}/paperless/pgdata:/var/lib/postgresql/data:Z
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-paperless}
+      POSTGRES_USER: ${POSTGRES_USER:-paperless}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-paperless}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-paperless} -d ${POSTGRES_DB:-paperless}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  webserver:
+    image: ${PAPERLESS_IMAGE:-ghcr.io/paperless-ngx/paperless-ngx:3.5.1}
+    container_name: mroffice-paperless-webserver
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      broker:
+        condition: service_healthy
+    ports:
+      - "${PAPERLESS_PORT:-8000}:8000"
+    volumes:
+      - ${DATA_ROOT:-/srv/mroffice}/paperless/data:/usr/src/paperless/data:Z
+      - ${DATA_ROOT:-/srv/mroffice}/paperless/media:/usr/src/paperless/media:Z
+      - ${DATA_ROOT:-/srv/mroffice}/paperless/export:/usr/src/paperless/export:Z
+      - ${DATA_ROOT:-/srv/mroffice}/paperless/consume:/usr/src/paperless/consume:Z
+    environment:
+      PAPERLESS_REDIS: redis://broker:6379
+      PAPERLESS_DBHOST: db
+      PAPERLESS_DBNAME: ${POSTGRES_DB:-paperless}
+      PAPERLESS_DBUSER: ${POSTGRES_USER:-paperless}
+      PAPERLESS_DBPASS: ${POSTGRES_PASSWORD:-paperless}
+      PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY:-change-me-generate-a-real-secret}
+      PAPERLESS_URL: ${PAPERLESS_URL:-http://localhost:8000}
+      # Hosts allowed to serve the UI/API (Django ALLOWED_HOSTS). Include every name/IP
+      # you browse the UI by (localhost + 127.0.0.1 for local dev, FQDN for split-host).
+      PAPERLESS_ALLOWED_HOSTS: ${PAPERLESS_ALLOWED_HOSTS:-localhost,127.0.0.1,webserver}
+      PAPERLESS_OCR_LANGUAGE: ${PAPERLESS_OCR_LANGUAGE:-por+eng}
+      PAPERLESS_OCR_LANGUAGES: ${PAPERLESS_OCR_LANGUAGES:-por}
+      PAPERLESS_TIKA_ENABLED: "1"
+      PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://gotenberg:3000
+      PAPERLESS_TIKA_ENDPOINT: http://tika:9998
+      PAPERLESS_TIME_ZONE: ${TZ:-UTC}
+      PAPERLESS_CONSUMER_DELETE_DUPLICATES: ${PAPERLESS_CONSUMER_DELETE_DUPLICATES:-0}
+      USERMAP_UID: ${USERMAP_UID:-1000}
+      USERMAP_GID: ${USERMAP_GID:-1000}
+      # --- Native AI (Paperless-ngx 3.x, off by default) ---
+      # Enable with COMPOSE_PROFILES=ai (starts ollama) + PAPERLESS_AI_ENABLED=1
+      PAPERLESS_AI_ENABLED: ${PAPERLESS_AI_ENABLED:-0}
+      PAPERLESS_AI_BACKEND: ${PAPERLESS_AI_BACKEND:-ollama}
+      PAPERLESS_AI_LLM_ENDPOINT: ${PAPERLESS_AI_LLM_ENDPOINT:-http://ollama:11434}
+      PAPERLESS_AI_LLM_MODEL: ${PAPERLESS_AI_LLM_MODEL:-qwen3:8b}
+      PAPERLESS_AI_EMBEDDINGS_BACKEND: ${PAPERLESS_AI_EMBEDDINGS_BACKEND:-ollama}
+      PAPERLESS_AI_EMBEDDINGS_ENDPOINT: ${PAPERLESS_AI_EMBEDDINGS_ENDPOINT:-http://ollama:11434}
+      PAPERLESS_AI_EMBEDDINGS_MODEL: ${PAPERLESS_AI_EMBEDDINGS_MODEL:-nomic-embed-text}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  gotenberg:
+    # Pinned: Paperless talks to it through gotenberg-client 1.0.0.
+    image: ${PAPERLESS_GOTENBERG_IMAGE:-docker.io/gotenberg/gotenberg:8.38.1}
+    container_name: mroffice-paperless-gotenberg
+    restart: unless-stopped
+    command:
+      - "gotenberg"
+      - "--chromium-disable-javascript=true"
+      - "--chromium-allow-list=file:///tmp/.*"
+
+  tika:
+    # Pinned: Tika 4.x dropped the /tika/form/text endpoint that
+    # tika-client 1.0.0 calls, so Office ingestion fails on :latest.
+    image: ${PAPERLESS_TIKA_IMAGE:-docker.io/apache/tika:3.3.3.0}
+    container_name: mroffice-paperless-tika
+    restart: unless-stopped
+
+  ollama:
+    # Optional local LLM for PAPERLESS_AI_*. Only started with COMPOSE_PROFILES=ai.
+    # Keep port unpublished by default (internal to compose network); set OLLAMA_PORT to expose.
+    image: ${OLLAMA_IMAGE:-docker.io/ollama/ollama:0.40.14}
+    container_name: mroffice-ollama
+    restart: unless-stopped
+    profiles: ["ai"]
+    volumes:
+      - ${DATA_ROOT:-/srv/mroffice}/paperless/ollama:/root/.ollama:Z
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+    expose:
+      - "11434"

@@ -21,11 +21,12 @@ for t in help doctor init config up down ps storage; do
     make -n $t >/dev/null 2>&1 && echo "  ✓ make -n $t"
 done
 
-# basic secret scan
+# basic secret scan — tracked files must never hold real secrets.
+# Allowed: templates (env.example, *.example) and versions.env (pinned tags, PLACEHOLDER digests only).
 echo ""
 echo "[secret scan]"
 if git rev-parse --git-dir >/dev/null 2>&1; then
-    if git ls-files | grep -E '\.env$|secrets' | grep -v example | grep -v secrets.env.example; then
+    if git ls-files | grep -E '(^|/)(\.env|config/\.secrets\.env|.*secrets.*)$' | grep -v '\.example$' | grep -v 'versions\.env$'; then
         echo "  ⚠ Possible secrets tracked"
     else
         echo "  ✓ No secrets tracked"

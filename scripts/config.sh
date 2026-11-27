@@ -8,7 +8,9 @@ echo "=== mroffice config ==="
 
 # Load env
 [ -f ".env" ] && set -a && source .env && set +a
+restore_env
 [ -f "config/.secrets.env" ] && set -a && source config/.secrets.env && set +a
+restore_env
 
 # Check required vars
 REQUIRED=(DATA_ROOT RUNTIME PROFILE ENV)
@@ -41,13 +43,24 @@ else
 fi
 
 # Check data dirs exist or can be created
-for d in "$DATA_ROOT/nextcloud/data" "$DATA_ROOT/nextcloud/config"; do
+for d in "$DATA_ROOT/nextcloud/data" "$DATA_ROOT/nextcloud/config" \
+         "$DATA_ROOT/paperless/consume" "$DATA_ROOT/paperless/media" \
+         "$DATA_ROOT/paperless/data" "$DATA_ROOT/paperless/export" \
+         "$DATA_ROOT/paperless/pgdata" "$DATA_ROOT/paperless/redisdata"; do
     if [ -d "$d" ]; then
         echo "✓ $d exists"
     else
         echo "⚠ $d missing (run make init)"
     fi
 done
+
+# Paperless compose file present?
+if [ -f "compose/paperless.yml" ]; then
+    echo "✓ compose/paperless.yml present"
+else
+    echo "✗ compose/paperless.yml missing"
+    exit 1
+fi
 
 echo ""
 echo "=== Config OK ==="
