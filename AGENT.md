@@ -44,17 +44,21 @@ can be demonstrated with a command from the Make interface.
 - Users, groups, quotas, 2FA and app defaults are declared as code/config where AIO allows it, and
   otherwise documented as post-install runbook steps.
 
-### O3 — Paperless-ngx, independently deployable
-- Paperless-ngx runs as its own stack (web, worker, broker, database, optional Redis) with persistent
-  **host directories bind-mounted** for `media`, `data`, `consume`, `export` and the database.
-- It is deployable **on the same host or on another host** than Nextcloud, configured only through
-  environment/config files — no code edits.
-- Paperless NG is already setup and already is a different project 
+### O3 — Paperless-ngx, unified locally and independently deployable
+- Paperless-ngx runs as its own compose stack (`compose/paperless.yml`: web, worker, broker, database,
+  plus gotenberg for Office→PDF and tika for text extraction, optional ollama for native AI) with persistent
+  **host directories bind-mounted** under `${DATA_ROOT}/paperless/` for `media`, `data`, `consume`, `export`,
+  `pgdata`, `redisdata` and `ollama` models.
+- It is deployable **on the same host as Nextcloud (default, `STACK=all`) or on another host**
+  (split-host via `PAPERLESS_URL`), configured only through environment/config files — no code edits.
+- Imported from the formerly separate `document_repo` project, now unified here; that repo is deprecated.
 
 ### O4 — Nextcloud ⇄ Paperless integration
-Both directions must be possible and verifiable:
+Both directions must be possible and verifiable. Local unified stack is the default;
+split-host remains supported:
 
-- **Ingest (Nextcloud → Paperless):** a file dropped into a designated Nextcloud folder is picked up
+- **Ingest (Nextcloud → Paperless):** a file dropped into a designated Nextcloud folder (local consume
+  dir or its external-storage mount) is picked up
   by Paperless (consume folder or API) and appears as a document, with tags/metadata applied.
 - **Browse (Paperless → Nextcloud):** Paperless documents are discoverable from Nextcloud, either
   through a maintained Nextcloud app that talks to the Paperless API, or through a documented
@@ -238,7 +242,9 @@ Whichever option is adopted, document:
 │   ├── collabora/            # only if the external-Collabora profile is used
 │   └── paperless/            # paperless-ngx stack (compose + quadlet variants)
 ├── quadlet/                  # Podman systemd units (Fedora, boot persistence)
-├── compose/                  # Docker/Podman Compose definitions (portable path)
+├── compose/                  # Compose definitions (portable path):
+│   ├── nextcloud-aio.yml     # AIO mastercontainer
+│   └── paperless.yml         # unified Paperless-ngx (web+db+broker+gotenberg+tika[+ollama/ai])
 ├── scripts/                  # doctor, storage, secrets, smoke, backup, restore, deploy, integration
 ├── docs/                     # runbooks: install, upgrade, backup/restore, integration, remote hosts
 └── tests/                    # smoke + config validation (shell/bats)
